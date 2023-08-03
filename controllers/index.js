@@ -24,13 +24,17 @@ class mainController {
 
     static commandCenter = async (req, res, next) => {
         const { mode, path, newPath, file } = req.body.params;
-        const params = req.body.param
+        const params = req.body.params
 
         // console.log("This is CC PARAMS: ", req.body.params);  // for testing purposes
 
         switch (mode) {
             case "list":
                 this.list(path, res);
+                break;
+            
+            case "listByIds":
+                this.listByIds(params, res);
                 break;
 
             default:
@@ -63,7 +67,37 @@ class mainController {
         );
     }
 
-    static async upload(req, res, next) {
+    static async listByIds(params, res) {
+        // console.log('THIS IS MAIN CONTROLLER LIST BY IDS');
+        // console.log(params.siteId, params.parentId);
+        
+        // /* For testing purpoises */
+        // res.send('success!')
+        // return;
+
+        const query = connection.query(
+            "call xxx_cms_List(?, ?, @e)",
+            [params.siteId, params.parentId],
+            function (err, result) {
+                if (err) {
+                    console.log("err:", err);
+                    res.error(err?.message || 'List error')
+                } else {
+
+                    // console.log("results:", result);  // for testing purposes
+
+                    const data = {
+                        result: result[0],
+                    };
+
+                    res.send(data);
+                }
+            }
+        );
+        
+    }
+
+    static async uploadOld(req, res, next) {
         const files = req?.files;
 
         // console.log("CONTROLLER UPLOAD FILES: ", files);  // for testing purposes
@@ -101,6 +135,74 @@ class mainController {
                 }
             }
         );
+    }
+
+    static async upload(req, res, next) {
+        console.log('HERE is UPLOAD!');
+        const files = req.files.files;  // I know it's ugly, but it's the most optimal form due to client-side request tampering. But hey, it works.
+        const body = req.body
+        const {siteId, parentId, isFolder, destination, parentIds, createdBy} = body
+        const isPublished = false;
+        const isDeleted = false;
+        const dateFormat = ""  // TODO insert date format here
+        const success = [];  // Container for file upload successes
+        const fail = null;  // container for upload failure
+
+        /* Query to upload file to DB. Single files only. For multiple files, do a loop */
+        const addFileToDB = (args, callback) => {
+            const query = connection.query(
+                "call xxx_cms_create(?, ?, ?, ?, ?, ?, ?, ?, ?, @e)",
+                args,
+                function(err, result) {
+                    if (err) {
+                        console.log("add file to db err:", err);
+                        err.fileUploadSuccess = success;
+                        err.fileUploadFail = fail;
+                        return next(err);
+                    }
+                    else {
+                        console.log('Success Upload Result: ', result);
+                        return result;
+                    }
+                }
+            )
+        }
+
+        console.log('UPLOAD siteId: ', body.siteId);
+        console.log('UPLOAD body: ', body);
+
+        if (!files[0]) {
+            // res.send("ERROR, NO FILE FOUND");
+            const err = {
+                status: 400,
+                code: "FILE_NOT_FOUND",
+                message: "File not found"
+            }
+            return next(err)
+        }
+        else {
+            if(!siteId) {
+                const err = {
+                    status: 400,
+                    code: "INCOMPLETE_PARAMS",
+                    message: "Incomplete parameters for uploading file(s)"
+                }
+                return next(err)
+            }
+            
+            files.forEach(file => {
+                let now = Date.now()
+                let bufferBase64 = file.buffer.toString("base64");
+                let args = [
+                    siteId, file.name, file.size, file.type, 0, destination, createdBy, now, bufferBase64  // lacks parent ID, parent IDs
+                ]
+                addFileToDB()
+            });
+        }
+    }
+
+    static async createFolder(req, res, next) {
+
     }
 
     static async testFetchImage(req, res, next) {
