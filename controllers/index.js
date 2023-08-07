@@ -1,4 +1,5 @@
 const connection = require("../services/connectDB");
+const moment = require('moment');
 
 class mainController {
     static async test(req, res, next) {
@@ -139,17 +140,66 @@ class mainController {
 
     static async upload(req, res, next) {
         console.log('HERE is UPLOAD!');
-        const files = req.files.files;  // I know it's ugly, but it's the most optimal form due to client-side request tampering. But hey, it works.
+        const files = req.files.files;  // I know it's ugly, but it's the most optimal form due to client-side request tampering. But hey, if it works, it works.
         const body = req.body
         const {siteId, parentId, isFolder, destination, parentIds, createdBy} = body
         const isPublished = false;
         const isDeleted = false;
         const dateFormat = ""  // TODO insert date format here
         const success = [];  // Container for file upload successes
-        const fail = null;  // container for upload failure
+        const fail = [];  // container for upload failure
+        let result = null;
 
-        /* Query to upload file to DB. Single files only. For multiple files, do a loop */
-        const addFileToDB = (args, callback) => {
+        /* Helper Functions Start */
+        const prepareFiles = (files) => {
+            const success = [];  // storage for successful file prep names
+            const fail = [];  // storage for failed file prep names
+            let result = [];
+            let customIndex = 0;  // adds indexing to successful processed files
+            files.forEach((file, index) => {
+                const fileProcessing = processSingleFile(file);
+                let filename = file?.originalname || `File number ${index + 1}`;  // name of the file OR by the file's upload order just in case it's undefined
+                if(!fileProcessing) {  // if processing returns false
+                    fail.push(filename);  // add the failed file to the pile of fails 
+                }
+                else {
+                    file.index = customIndex;
+                    success.push(filename)  // add successfully processed file's name to the pile of successes
+                    result.push(fileProcessing)  // add successfully processed file to the pile of results to be sent to DB
+                    customIndex++;
+                } 
+            });
+
+            // if(result[0]) {  // checks if there's any entry in result array
+            //     result = JSON.stringify(result);  // converts the whole result into a string to prepare for DB insertion
+            // }
+            // else {
+            //     result = null;  // empties result variable as signal something went wrong. Just in case.
+            // }
+
+            return {success, fail, result};  // returns a collection of processed files and which ones are successful and fail, denoted by the filename
+        }
+
+        const processSingleFile = (file) => {
+            const { originalname, mimetype, buffer, size, encoding } = file;  // extract properties out of the file
+            
+            if(!originalname || !mimetype || !buffer || !size || !encoding) {  // file properties check, if one of it is missing, is not valid file
+                return false;  // returns false if one of the properties are incomplete
+            }
+
+            const bufferBase64 = buffer.toString("base64");  // encoding before inserting into DB as Long Blob
+            
+            const processedFile = {  // wrap the files as an object with short and concise property names
+                name: originalname,
+                type: mimetype,
+                size: size,
+                encoding: encoding,
+                data: bufferBase64
+            }
+            return processedFile;
+        }
+
+        const addFileToDB = (args, callback) => {  // Depreciated
             const query = connection.query(
                 "call xxx_cms_create(?, ?, ?, ?, ?, ?, ?, ?, ?, @e)",
                 args,
@@ -167,9 +217,80 @@ class mainController {
                 }
             )
         }
+        /* Helper functions end */
 
-        console.log('UPLOAD siteId: ', body.siteId);
-        console.log('UPLOAD body: ', body);
+        /* Query to upload file to DB. Single files only. For multiple files, do a loop */
+
+        let argFiles = null;  // to be populated with processed files STRING, after properties being appropriated and its buffers encoded
+        const args = JSON.stringify({
+            siteId: siteId,
+            parentId: parentId,
+            parentIds: parentIds,
+            path: destination,
+            createdBy: createdBy,
+            modifiedBy: createdBy,
+            lastUpdateBy: createdBy,
+            publishDate: false,
+            modifiedDate: moment().format('YYYY-MM-DD hh:mm:ss'),
+            isFolder: 0,
+            isPublished: 0,
+            isDeleted: 0
+        });  // to be inserted as 'args' in addFileToDB function
+
+        argFiles = prepareFiles(files);  // TODO add successful/fail check
+
+        // console.log('This is BODY: ', req.body);
+        console.log('This is ARGS: ', args);
+        console.log('This is ARG FILES: ', argFiles);
+
+        /* Insert DB Loop here */
+        argFiles.result.forEach(argFile => {
+            let connect = connection.query("call xxx_cms_create(?, ?)", [args, JSON.stringify(argFile)], function(err, result) {
+                const filename = argFile.name
+                if(err) {
+                    console.log("Upload Failed, file:", filename);
+                    console.log("Upload Failed, err:", err);
+                    fail.push(filename)
+                }
+                else {
+                    console.log('Upload Success; Result: ', filename);
+                    result = result;
+                    success.push(filename);
+                }
+            })
+        });
+
+        console.log('Upload RESULT: ', result);
+
+        if(success[0]) {
+            res.status(201).json({
+                success: true,
+                data: result
+            })
+        }
+
+        // const testConnect = connection.query("call xxx_cms_create(?, ?)", [args, argFiles.result], function(err, result) {
+        //     if(err) {
+        //         console.log("Test Failed:", err);
+        //                 err.fileUploadSuccess = success;
+        //                 err.fileUploadFail = fail;
+        //                 err.status = 500
+        //                 err.message = 'IS FAIL'
+        //                 return next(err);
+        //     }
+        //     else {
+        //         console.log('Test Success; Result: ', result);
+        //         res.status(201).json({
+        //             success: true,
+        //             data: result
+        //         })
+        //         return;
+        //     }
+        // })
+
+        return ;  // cutoff for current testing
+
+        
 
         if (!files[0]) {
             // res.send("ERROR, NO FILE FOUND");
@@ -194,12 +315,14 @@ class mainController {
                 let now = Date.now()
                 let bufferBase64 = file.buffer.toString("base64");
                 let args = [
-                    siteId, file.name, file.size, file.type, 0, destination, createdBy, now, bufferBase64  // lacks parent ID, parent IDs
+                    siteId, parentId, parentIds, file.name, file.size, file.type, isFolder, destination, createdBy, now, bufferBase64  // lacks parent ID, parent IDs
                 ]
                 addFileToDB()
             });
         }
     }
+
+    
 
     static async createFolder(req, res, next) {
 
