@@ -3,6 +3,7 @@ const moment = require("moment");
 const fs = require("fs");
 const {FormData} = require("formdata-node")
 const path = require('path');
+const { Readable, Duplex } = require('stream')
 // const { Blob } = require("fetch-blob")
 // import { Blob } from "fetch-blob";
 // const { createTemporaryBlob, createTemporaryFile } = require("fetch-blob/from")
@@ -187,15 +188,12 @@ class mainController {
                 return false; // returns false if one of the properties are incomplete
             }
 
-            const bufferBase64 = buffer.toString("base64"); // encoding before inserting into DB as Long Blob
-
             const processedFile = {
                 // wrap the files as an object with short and concise property names
                 name: originalname,
                 type: mimetype,
                 size: size,
                 encoding: encoding,
-                // data: bufferBase64,
                 data: buffer,
             };
             return processedFile;
@@ -242,11 +240,8 @@ class mainController {
                     const filename = argFile.name;
                     if (err) {
                         console.log("Upload Failed, err:", err);
-                        // fail.push(filename);
                     } else {
                         result = result;
-                        // success.push(filename);
-
                         if (index == argFiles.result.length - 1) {
                             return finishingUp();
                         }
@@ -321,6 +316,13 @@ class mainController {
                 console.error(error);
             }
         }
+
+        function bufferToStream(myBuuffer) {
+            let tmp = new Duplex();
+            tmp.push(myBuuffer);
+            tmp.push(null);
+            return tmp;
+        }
         /* Helper function end */
 
         console.log('DL to DB pre-connection');
@@ -339,11 +341,39 @@ class mainController {
                     let buffer = dataFile.data;
                     let filename = dataFile.name;
 
-                    let newFile = createTempFile(buffer, filename);
+                    // let newFile = createTempFile(buffer, filename);
 
-                    let currentDir = path.resolve('.');
-                    let pathToFile = currentDir + '/' + newFile.slice(1, newFile.length)
-                    return res.sendFile(pathToFile);
+                    // let currentDir = path.resolve('.');
+                    // let pathToFile = currentDir + '/' + newFile.slice(1, newFile.length)
+
+                    /* Direct from stream, not file! */
+                    const myReadableStream = bufferToStream(buffer);
+                    myReadableStream.pipe(res);
+
+                    // return res.sendFile(pathToFile);
+
+                    // let buffered = Buffer.from(buffer);
+
+                    // let readStream = fs.createReadStream(pathToFile).pipe(res);
+                    // let readStream = fs.createReadStream(buffered).pipe(res);
+                    // let readStream = fs.createReadStream(myReadableStream).pipe(res);
+
+                    // readStream.on('data', chunk => {
+                    //     console.log('----------------------------');
+                    //     console.log(chunk);
+                    //     console.log('----------------------------');
+                    // })
+
+                    // readStream.on('open', () => {
+                    //     console.log('Stream Open..');
+                    // })
+
+                    // readStream.on('end', () => {
+                    //     console.log('Stream closed..');
+                    //     return res.send('Success!')
+                    // })
+
+
                 }
             }
         );
