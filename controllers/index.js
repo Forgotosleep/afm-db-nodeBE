@@ -2,6 +2,7 @@ const connection = require("../services/connectDB");
 const moment = require("moment");
 const fs = require("fs");
 const {FormData} = require("formdata-node")
+const path = require('path');
 // const { Blob } = require("fetch-blob")
 // import { Blob } from "fetch-blob";
 // const { createTemporaryBlob, createTemporaryFile } = require("fetch-blob/from")
@@ -154,12 +155,6 @@ class mainController {
             parentIds,
             createdBy,
         } = body;
-        const isPublished = false;
-        const isDeleted = false;
-        const dateFormat = ""; // TODO insert date format here
-        const success = []; // Container for file upload successes
-        const fail = []; // container for upload failure
-        let result = null;
 
         /* Helper Functions Start */
         const prepareFiles = (files) => {
@@ -181,13 +176,6 @@ class mainController {
                 }
             });
 
-            // if(result[0]) {  // checks if there's any entry in result array
-            //     result = JSON.stringify(result);  // converts the whole result into a string to prepare for DB insertion
-            // }
-            // else {
-            //     result = null;  // empties result variable as signal something went wrong. Just in case.
-            // }
-
             return { success, fail, result }; // returns a collection of processed files and which ones are successful and fail, denoted by the filename
         };
 
@@ -208,41 +196,20 @@ class mainController {
                 size: size,
                 encoding: encoding,
                 // data: bufferBase64,
-                data: buffer.toString(),
+                data: buffer,
             };
             return processedFile;
-        };
-
-        const addFileToDB = (args, callback) => {
-            // Depreciated
-            const query = connection.query(
-                "call xxx_cms_create(?, ?, ?, ?, ?, ?, ?, ?, ?, @e)",
-                args,
-                function (err, result) {
-                    if (err) {
-                        console.log("add file to db err:", err);
-                        err.fileUploadSuccess = success;
-                        err.fileUploadFail = fail;
-                        return next(err);
-                    } else {
-                        console.log("Success Upload Result: ", result);
-                        return result;
-                    }
-                }
-            );
         };
 
         function finishingUp() {
             // TODO Create an error handler logic for partial upload fails
             return res.status(201).json({
                 success: true,
-                data: { success, fail, result },
             });
         }
         /* Helper functions end */
 
         /* Query to upload file to DB. Single files only. For multiple files, do a loop */
-
         let argFiles = null; // to be populated with processed files STRING, after properties being appropriated and its buffers encoded
         const args = JSON.stringify({
             siteId: siteId,
@@ -261,25 +228,24 @@ class mainController {
 
         argFiles = prepareFiles(files); // TODO add successful/fail check
 
+        console.log('ARG FILES: ', argFiles);
+
         /* Insert DB Loop here */
         argFiles.result.forEach((argFile, index) => {
             console.log("INDEX:", index);
-            console.log("ARGFILE BUFFER: ", argFile.buffer);
-            console.log(
-                "ARGFILE BUFFER STRINGIFIED: ",
-                JSON.stringify(argFile.buffer)
-            );
+            console.log("ARGFILE BUFFER: ", argFile.data);
+
             let connect = connection.query(
-                "call xxx_cms_create(?, ?)",
-                [args, JSON.stringify(argFile)],
+                "call xxx_cms_create(?, ?, ?)",
+                [args, JSON.stringify(argFile), argFile.data],
                 function (err, result) {
                     const filename = argFile.name;
                     if (err) {
                         console.log("Upload Failed, err:", err);
-                        fail.push(filename);
+                        // fail.push(filename);
                     } else {
                         result = result;
-                        success.push(filename);
+                        // success.push(filename);
 
                         if (index == argFiles.result.length - 1) {
                             return finishingUp();
@@ -338,49 +304,26 @@ class mainController {
         console.log("DL Req URL: ", req.url);
         console.log("DL Req QUERY: ", req.query);
         console.log("DL Req BODY: ", req.body);
-        // console.log("DL Fetch data: ", fetchData);
-
-        // const query = await this.fetchData(req.query.fileId);
-        // let queryResult = query[0][0];
-
-        // let file = await fs.writeFile(
-        //     queryResult.name,
-        //     base64,
-        //     { encoding: "base64" },
-        //     (err) => {
-        //         if (err) {
-        //             console.log("err:", err);
-        //             next(err);
-        //         }
-        //     }).then(function(filefile) {
-        //         console.log("File created");
-        //             console.log("DATA ", filefile);
-
-        //             res.setHeader(
-        //                 "Content-disposition",
-        //                 "attachment; filename=" + queryResult.name
-        //             );
-        //             res.setHeader("Content-type", queryResult.mime_types);
-        //             console.log(filefile);
-        //             return res.send(filefile);
-        //     })
-
-        //     ;
 
         /* Helper function start */
-        async function blob2file(blobData) {
-            let blob = await createTemporaryBlob(blobData)
-            const fd = new FormData();
-            fd.set("a", blob, "filename");
-            return fd.get("a");
-        }
 
-        function blobToFile(theBlob, fileName, type){       
-            return new File([theBlob], fileName, { type: type })
+        function createTempFile (blob, filename) {
+            try {
+                let path = `./tmp/${filename}`;
+
+                if(fs.existsSync(path)) {
+                    return path;
+                }
+
+                fs.writeFileSync(path, blob);
+                return path;
+            } catch (error) {
+                console.error(error);
+            }
         }
         /* Helper function end */
 
-        console.log('PILLS HERE');
+        console.log('DL to DB pre-connection');
 
         const data = await connection.query(
             "call xxx_cms_FetchFile(?)",
@@ -393,51 +336,17 @@ class mainController {
                 else {
                     let dataFile = result[0][0];
                     console.log('dataFile: ', dataFile);
-                    let fileData = dataFile.data;
-                    let blobData = new Buffer.from(dataFile.data)
-                    let becomeFile = blob2file(blobData);
-                    // let becomeFile2 = blobToFile(blobData, dataFile.name, dataFile.mime_types);
+                    let buffer = dataFile.data;
+                    let filename = dataFile.name;
 
-                    res.send(becomeFile);
+                    let newFile = createTempFile(buffer, filename);
+
+                    let currentDir = path.resolve('.');
+                    let pathToFile = currentDir + '/' + newFile.slice(1, newFile.length)
+                    return res.sendFile(pathToFile);
                 }
             }
         );
-
-        // const data = await connection.query(
-        //     "call xxx_cms_FetchFile(?)",
-        //     [parseInt(req.query.fileId)],
-        //     async function (err, result) {
-        //         if (err) {
-        //             console.log("err:", err);
-        //             next(err);
-        //         } else {
-        //             let dataFile = result[0][0];
-        //             console.log("Fetch RESULT: ", dataFile);
-
-        //             let base64 = dataFile.data;
-        //             console.log("Fetch RESULT: ", dataFile.data);
-        //             console.log("Fetch RESULT: ", base64);
-        //             let file2 = fs.writeFileSync(dataFile.name, base64, {
-        //                 encoding: "base64",
-        //             });
-        //             // let file = fs.writeFileSync(
-        //             //     dataFile.name,
-        //             //     base64,
-        //             //     { encoding: "base64" },
-        //             // );
-        //             console.log("File created");
-        //             console.log("DATA ", file2);
-
-        //             res.setHeader(
-        //                 "Content-disposition",
-        //                 "attachment; filename=" + dataFile.name
-        //             );
-        //             res.setHeader("Content-type", dataFile.mime_types);
-        //             console.log(file2);
-        //             return res.send(file2);
-        //         }
-        //     }
-        // );
     }
 
     async fetchData(fileId) {

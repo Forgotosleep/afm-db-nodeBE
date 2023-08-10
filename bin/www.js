@@ -15,4 +15,4 @@ pool.query('SELECT 1 + 1 AS solution', function (error, results, fields) {
   console.log('iAFM Server is running!');
 });
  
-// pool.release();
+// pool.release();  // Disconnects pool. For testing.
