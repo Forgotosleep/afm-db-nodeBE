@@ -10,7 +10,9 @@ const uploadFile = require("./middlewares/multer");
 
 /* Server Setup */
 const app = express();
-app.use(helmet()); // Helmet helps secure Express apps by setting HTTP response headers
+app.use(helmet({
+    crossOriginResourcePolicy: false,  // TODO Disable this in staging/prod
+})); // Helmet helps secure Express apps by setting HTTP response headers
 app.disable("x-powered-by"); // Reduces Fingerprinting
 
 /* CORS */

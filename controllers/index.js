@@ -1,9 +1,9 @@
 const connection = require("../services/connectDB");
 const moment = require("moment");
 const fs = require("fs");
-const {FormData} = require("formdata-node")
-const path = require('path');
-const { Readable, Duplex } = require('stream')
+const { FormData } = require("formdata-node");
+const path = require("path");
+const { Readable, Duplex } = require("stream");
 // const { Blob } = require("fetch-blob")
 // import { Blob } from "fetch-blob";
 // const { createTemporaryBlob, createTemporaryFile } = require("fetch-blob/from")
@@ -226,7 +226,7 @@ class mainController {
 
         argFiles = prepareFiles(files); // TODO add successful/fail check
 
-        console.log('ARG FILES: ', argFiles);
+        console.log("ARG FILES: ", argFiles);
 
         /* Insert DB Loop here */
         argFiles.result.forEach((argFile, index) => {
@@ -295,88 +295,140 @@ class mainController {
     }
 
     static async download(req, res, next) {
-        // unfinished prototype
-        console.log("DL Req URL: ", req.url);
-        console.log("DL Req QUERY: ", req.query);
-        console.log("DL Req BODY: ", req.body);
+        try {
+            // unfinished prototype
+            console.log("DL Req URL: ", req.url);
+            console.log("DL Req QUERY: ", req.query);
+            console.log("DL Req BODY: ", req.body);
 
-        /* Helper function start */
+            let isPreview = req.query?.preview;
 
-        function createTempFile (blob, filename) {
-            try {
-                let path = `./tmp/${filename}`;
+            /* Helper function start */
+            function createTempFile(blob, filename) {
+                // Option A
+                // saves to a local file first, then returns the path for access
+                try {
+                    let path = `./tmp/${filename}`;
 
-                if(fs.existsSync(path)) {
+                    if (fs.existsSync(path)) {
+                        return path;
+                    }
+
+                    fs.writeFileSync(path, blob);
                     return path;
-                }
-
-                fs.writeFileSync(path, blob);
-                return path;
-            } catch (error) {
-                console.error(error);
-            }
-        }
-
-        function bufferToStream(myBuuffer) {
-            let tmp = new Duplex();
-            tmp.push(myBuuffer);
-            tmp.push(null);
-            return tmp;
-        }
-        /* Helper function end */
-
-        console.log('DL to DB pre-connection');
-
-        const data = await connection.query(
-            "call xxx_cms_FetchFile(?)",
-            [parseInt(req.query.fileId)],
-            (err, result) => {
-                if (err) {
-                    console.log("err:", err);
-                    next(err);
-                }
-                else {
-                    let dataFile = result[0][0];
-                    console.log('dataFile: ', dataFile);
-                    let buffer = dataFile.data;
-                    let filename = dataFile.name;
-
-                    // let newFile = createTempFile(buffer, filename);
-
-                    // let currentDir = path.resolve('.');
-                    // let pathToFile = currentDir + '/' + newFile.slice(1, newFile.length)
-
-                    /* Direct from stream, not file! */
-                    const myReadableStream = bufferToStream(buffer);
-                    myReadableStream.pipe(res);
-
-                    // return res.sendFile(pathToFile);
-
-                    // let buffered = Buffer.from(buffer);
-
-                    // let readStream = fs.createReadStream(pathToFile).pipe(res);
-                    // let readStream = fs.createReadStream(buffered).pipe(res);
-                    // let readStream = fs.createReadStream(myReadableStream).pipe(res);
-
-                    // readStream.on('data', chunk => {
-                    //     console.log('----------------------------');
-                    //     console.log(chunk);
-                    //     console.log('----------------------------');
-                    // })
-
-                    // readStream.on('open', () => {
-                    //     console.log('Stream Open..');
-                    // })
-
-                    // readStream.on('end', () => {
-                    //     console.log('Stream closed..');
-                    //     return res.send('Success!')
-                    // })
-
-
+                } catch (error) {
+                    console.error(error);
                 }
             }
-        );
+
+            function bufferToStream(myBuffer) {
+                // Option B
+                // buffer and stream exists in memory, not local storage
+                // good behavior up until 10 MB files, destination must accept readable stream
+                let tmp = new Duplex();
+                tmp.push(myBuffer);
+                tmp.push(null);
+                return tmp;
+            }
+            /* Helper function end */
+
+            console.log("DL to DB pre-connection");
+
+            const data = await connection.query(
+                "call xxx_cms_FetchFile(?)",
+                [parseInt(req.query.fileId)],
+                (err, result) => {
+                    if (err) {
+                        console.log("err:", err);
+                        next(err);
+                    } else {
+                        console.log("ISE GEESE!!");
+
+                        let dataFile = result[0][0];
+                        console.log("dataFile: ", dataFile);
+                        let buffer = dataFile.data;
+                        let filename = dataFile.name;
+
+                        if (isPreview !== "false") {
+                            console.log("ISE PREEVIEW!!");
+
+                            /* Direct from stream, not file! */
+                            /* Option B */
+                            const myReadableStream = bufferToStream(buffer);
+                            // myReadableStream.pipe(res);
+
+                            myReadableStream.on("data", function (data) {
+                                res.write(data);
+                            });
+
+                            myReadableStream.on("end", function () {
+                                res.end();
+                            });
+
+                        } else {
+                            console.log("HERE!!");
+
+                            // /* Option A */
+                            let newFile = createTempFile(buffer, filename);
+
+                            let currentDir = path.resolve(".");
+                            let pathToFile =
+                                currentDir +
+                                "/" +
+                                newFile.slice(1, newFile.length);
+
+                            console.log(pathToFile);
+
+                            res.download(pathToFile, (err) => {
+                                if(err) {
+                                    console.error(err);
+                                    next(err);
+                                }
+                                fs.unlink(pathToFile, (err) => {
+                                    if(err) {next(err)};
+                                    res.end();
+                                });
+                            }); // Send 'physical' file
+
+
+                            // let buffered = Buffer.from(buffer);
+
+                            // let readStream = fs
+                            //     .createReadStream(pathToFile)
+                            //     // .pipe(res);
+                            // // let readStream = fs.createReadStream(buffered).pipe(res);
+                            // // let readStream = fs.createReadStream(myReadableStream).pipe(res);
+
+                            // readStream.on("data", (data) => {
+                            //     console.log("----------------------------");
+                            //     console.log(data);
+                            //     console.log("----------------------------");
+
+                            //     res.write(data);
+
+                            // });
+
+                            // readStream.on("open", () => {
+                            //     console.log("Stream Open..");
+                            // });
+
+                            // readStream.on("end", () => {
+                            //     console.log("Stream closed..");
+                            //     res.download(pathToFile);
+                            //     fs.unlink(pathToFile, (err) => {
+                            //         if(err) {next(err)};
+                            //         res.end();
+                            //     });
+                            //     // return res.send("Success!");
+                            // });
+                        }
+                    }
+                }
+            );
+        } catch (error) {
+            console.error(error);
+            next(error);
+        }
     }
 
     async fetchData(fileId) {
