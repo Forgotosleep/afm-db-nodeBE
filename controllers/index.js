@@ -4,10 +4,6 @@ const fs = require("fs");
 const { FormData } = require("formdata-node");
 const path = require("path");
 const { Readable, Duplex } = require("stream");
-// const { Blob } = require("fetch-blob")
-// import { Blob } from "fetch-blob";
-// const { createTemporaryBlob, createTemporaryFile } = require("fetch-blob/from")
-// const { File } = require("fetch-blob/file.js")
 
 class mainController {
     static async test(req, res, next) {
@@ -38,12 +34,28 @@ class mainController {
         // console.log("This is CC PARAMS: ", req.body.params);  // for testing purposes
 
         switch (mode) {
-            case "list":
-                this.list(path, res);
-                break;
+            // case "list":  // depreciated, changed to listByIds
+            //     this.list(path, res);
+            //     break;
 
             case "listByIds":
                 this.listByIds(params, res);
+                break;
+            
+            case "createFolder":
+                this.createFolder(params, res, next)
+                break;
+
+            case "move":
+                this.moveFiles(params, res, next)
+                break;
+
+            case "move":
+                this.copyFiles(params, res, next)
+                break;
+
+            case "move":
+                this.deleteFiles(params, res, next)
                 break;
 
             default:
@@ -88,7 +100,7 @@ class mainController {
             [params.siteId, params.parentId],
             function (err, result) {
                 if (err) {
-                    console.log("err:", err);
+                    console.error("err:", err);
                     res.error(err?.message || "List error");
                 } else {
                     // console.log("results:", result);  // for testing purposes
@@ -101,6 +113,95 @@ class mainController {
                 }
             }
         );
+    }
+
+    static async moveFiles(params, res, next) {
+        
+    }
+
+    static async copyFiles(params, res, next) {
+
+    }
+
+    static async deleteFiles(params, res, next) {
+
+    }
+
+    static async createFolder(params, res, next) {
+        try {
+
+            // console.log('MAIN CONTROLLER createFolder params: ', params);
+
+            /* Helper functions start */
+            const prepareEmptyFile = (name) => {
+                const emptyFile = {
+                    // wrap the files as an object with short and concise property names
+                    name:  name,
+                    type:  0,
+                    size:  0,
+                    encoding: 0,
+                    data: 0,
+                };
+                return emptyFile;
+            };
+    
+            function finishingUp() {
+                // TODO Create an error handler logic for partial upload fails
+                return res.status(201).json({
+                    success: true,
+                    message: 'Folder successfully created'
+                });
+            }
+            /* Helper functions end */
+    
+            const {
+                name,
+                siteId,
+                parentId,
+                destination,
+                parentIds,
+                createdBy,
+            } = params;
+    
+            const args = {
+                name: name,
+                siteId: siteId,
+                parentIds: parentIds,
+                path: destination,
+                createdBy: createdBy,
+                modifiedBy: createdBy,
+                lastUpdateBy: createdBy,
+                publishDate: false,
+                modifiedDate: moment().format("YYYY-MM-DD hh:mm:ss"),
+                isFolder: 1,
+                isPublished: 0,
+                isDeleted: 0,
+            }; // to be inserted as 'args'
+
+            if(parentId) {args.parentId = parentId}  // avoid parentId null error on DB's SP
+    
+            let newFolder = prepareEmptyFile(name);
+
+            // console.log('createFolder NEWFOLDER: ', newFolder);
+    
+            let connect = connection.query(
+                "call xxx_cms_create(?, ?, ?, ?)",
+                [JSON.stringify(args), JSON.stringify(newFolder), 1, null],
+                function (err, result) {
+                    const foldername = newFolder.name;
+                    if (err) {
+                        console.error("Folder creation failed, err:", err);
+                        next(err);
+                    } else {
+                        return finishingUp();
+                    }
+                }
+            );
+        } catch (error) {
+            console.error(error);
+            next(error);
+        }
+        
     }
 
     // static async uploadOld(req, res, next) {  // Depreciated, switched to new SP with multiple files upload capability
@@ -144,18 +245,19 @@ class mainController {
     // }
 
     static async upload(req, res, next) {
-        console.log("HERE is UPLOAD!");
+        // console.log("HERE is UPLOAD!");
         const files = req.files.files; // I know it's ugly, but it's the most optimal form due to client-side request tampering. But hey, if it works, it works.
-        console.log("HERE is UPLOAD FILES: ", files);
+        // console.log("HERE is UPLOAD FILES: ", files);
         const body = req.body;
         const {
             siteId,
             parentId,
-            isFolder,
             destination,
             parentIds,
             createdBy,
         } = body;
+
+        // console.log("HERE is UPLOAD BODY: ", body);
 
         /* Helper Functions Start */
         const prepareFiles = (files) => {
@@ -203,15 +305,15 @@ class mainController {
             // TODO Create an error handler logic for partial upload fails
             return res.status(201).json({
                 success: true,
+                message: 'File(s) upload successful'
             });
         }
         /* Helper functions end */
 
         /* Query to upload file to DB. Single files only. For multiple files, do a loop */
         let argFiles = null; // to be populated with processed files STRING, after properties being appropriated and its buffers encoded
-        const args = JSON.stringify({
+        const args = {
             siteId: siteId,
-            parentId: parentId,
             parentIds: parentIds,
             path: destination,
             createdBy: createdBy,
@@ -222,24 +324,26 @@ class mainController {
             isFolder: 0,
             isPublished: 0,
             isDeleted: 0,
-        }); // to be inserted as 'args' in addFileToDB function
+        }; // to be inserted as 'args' in addFileToDB function
+
+        if(parentId && parentId !== 'null' && parentId !== 'false') {args.parentId = parentId}  // avoid parentId null error on DB's SP
 
         argFiles = prepareFiles(files); // TODO add successful/fail check
 
-        console.log("ARG FILES: ", argFiles);
+        // console.log("ARG FILES: ", argFiles);
 
         /* Insert DB Loop here */
         argFiles.result.forEach((argFile, index) => {
-            console.log("INDEX:", index);
-            console.log("ARGFILE BUFFER: ", argFile.data);
+            // console.log("INDEX:", index);
+            // console.log("ARGFILE BUFFER: ", argFile.data);
 
             let connect = connection.query(
-                "call xxx_cms_create(?, ?, ?)",
-                [args, JSON.stringify(argFile), argFile.data],
+                "call xxx_cms_create(?, ?, ?, ?)",
+                [JSON.stringify(args), JSON.stringify(argFile), 0, argFile.data],
                 function (err, result) {
                     const filename = argFile.name;
                     if (err) {
-                        console.log("Upload Failed, err:", err);
+                        console.error("Upload Failed, err:", err);
                     } else {
                         result = result;
                         if (index == argFiles.result.length - 1) {
@@ -253,22 +357,20 @@ class mainController {
         return;
     }
 
-    static async createFolder(req, res, next) {}
-
     static async testFetchImage(req, res, next) {
-        console.log("This is the MAIN CONTROLLER TEST FETCH IMAGE"); // for testing purposes
+        // console.log("This is the MAIN CONTROLLER TEST FETCH IMAGE"); // for testing purposes
 
         const data = connection.query(
             "SELECT * FROM cms_documents_data WHERE cms_document_id = 107",
             function (err, result) {
                 if (err) {
-                    console.log("err:", err);
+                    console.error("err:", err);
                     next(err);
                 } else {
-                    console.log("DATA: ", result[0].data);
+                    // console.log("DATA: ", result[0].data);
 
                     let buffer = new Buffer.from(result[0].data, "base64");
-                    console.log("BUFFER: ", buffer);
+                    // console.log("BUFFER: ", buffer);
                     let image = buffer.toString("base64");
                     // console.log('IMAGE: ', image);
                     //     const bufferBase64 = buffer.toString("base64");
@@ -297,9 +399,9 @@ class mainController {
     static async download(req, res, next) {
         try {
             // unfinished prototype
-            console.log("DL Req URL: ", req.url);
-            console.log("DL Req QUERY: ", req.query);
-            console.log("DL Req BODY: ", req.body);
+            // console.log("DL Req URL: ", req.url);
+            // console.log("DL Req QUERY: ", req.query);
+            // console.log("DL Req BODY: ", req.body);
 
             let isPreview = req.query?.preview;
 
@@ -332,95 +434,56 @@ class mainController {
             }
             /* Helper function end */
 
-            console.log("DL to DB pre-connection");
-
             const data = await connection.query(
                 "call xxx_cms_FetchFile(?)",
                 [parseInt(req.query.fileId)],
                 (err, result) => {
                     if (err) {
-                        console.log("err:", err);
+                        console.error("err:", err);
                         next(err);
                     } else {
-                        console.log("ISE GEESE!!");
-
                         let dataFile = result[0][0];
-                        console.log("dataFile: ", dataFile);
-                        let buffer = dataFile.data;
-                        let filename = dataFile.name;
+                        // console.log("dataFile: ", dataFile);
+                        let buffer = dataFile?.data;
+                        let filename = dataFile?.name;
+
+                        if(!buffer) {  // Returns error if file's content is NULL
+                            return res.status(500).json({
+                                success: false,
+                                message: "Invalid file"
+                            })
+                        }
 
                         if (isPreview !== "false") {
-                            console.log("ISE PREEVIEW!!");
-
                             /* Direct from stream, not file! */
-                            /* Option B */
                             const myReadableStream = bufferToStream(buffer);
-                            // myReadableStream.pipe(res);
+                            myReadableStream.pipe(res);  // can do this one too, similar to write & end
 
-                            myReadableStream.on("data", function (data) {
-                                res.write(data);
-                            });
+                            /* Alternative to pipe, if wanted to do with a trigger */
+                            // myReadableStream.on("data", function (data) {
+                            //     res.write(data);
+                            // });
 
-                            myReadableStream.on("end", function () {
-                                res.end();
-                            });
+                            // myReadableStream.on("end", function () {
+                            //     res.end();
+                            // });
 
                         } else {
-                            console.log("HERE!!");
-
-                            // /* Option A */
                             let newFile = createTempFile(buffer, filename);
 
                             let currentDir = path.resolve(".");
-                            let pathToFile =
-                                currentDir +
-                                "/" +
-                                newFile.slice(1, newFile.length);
+                            let pathToFile = currentDir + "/" + newFile.slice(1, newFile.length);
 
-                            console.log(pathToFile);
-
-                            res.download(pathToFile, (err) => {
+                            res.download(pathToFile, (err) => {  // Sends 'physical' copy of the file, and deletes its source file afterwards
                                 if(err) {
                                     console.error(err);
                                     next(err);
                                 }
-                                fs.unlink(pathToFile, (err) => {
+                                fs.unlink(pathToFile, (err) => {  // when file is sent, delete the source
                                     if(err) {next(err)};
                                     res.end();
                                 });
-                            }); // Send 'physical' file
-
-
-                            // let buffered = Buffer.from(buffer);
-
-                            // let readStream = fs
-                            //     .createReadStream(pathToFile)
-                            //     // .pipe(res);
-                            // // let readStream = fs.createReadStream(buffered).pipe(res);
-                            // // let readStream = fs.createReadStream(myReadableStream).pipe(res);
-
-                            // readStream.on("data", (data) => {
-                            //     console.log("----------------------------");
-                            //     console.log(data);
-                            //     console.log("----------------------------");
-
-                            //     res.write(data);
-
-                            // });
-
-                            // readStream.on("open", () => {
-                            //     console.log("Stream Open..");
-                            // });
-
-                            // readStream.on("end", () => {
-                            //     console.log("Stream closed..");
-                            //     res.download(pathToFile);
-                            //     fs.unlink(pathToFile, (err) => {
-                            //         if(err) {next(err)};
-                            //         res.end();
-                            //     });
-                            //     // return res.send("Success!");
-                            // });
+                            }); 
                         }
                     }
                 }
@@ -429,26 +492,6 @@ class mainController {
             console.error(error);
             next(error);
         }
-    }
-
-    async fetchData(fileId) {
-        // For testing purposes
-        connection.query(
-            "call xxx_cms_FetchFile(?)",
-            [fileId],
-            function (err, result) {
-                if (err) console.log(err);
-                else {
-                    return result;
-                }
-            }
-        );
-    }
-
-    static async writeFile(name, data) {
-        // For testing purposes
-        let result = await fs.writeFile(name, data, { encoding: "base64" });
-        return result;
     }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "afm-db-nodeBE",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -16,7 +16,6 @@
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "fetch-blob": "^4.0.0",
     "formdata-node": "4.4.1",
     "helmet": "^7.0.0",
     "mime": "^3.0.0",
