@@ -41,21 +41,25 @@ class mainController {
             case "listByIds":
                 this.listByIds(params, res);
                 break;
-            
+
             case "createFolder":
-                this.createFolder(params, res, next)
+                this.createFolder(params, res, next);
+                break;
+
+            case "rename":
+                this.renameFile(params, res, next);
                 break;
 
             case "move":
-                this.moveFiles(params, res, next)
+                this.moveFiles(params, res, next);
                 break;
 
-            case "move":
-                this.copyFiles(params, res, next)
+            case "copy":
+                this.copyFiles(params, res, next);
                 break;
 
-            case "move":
-                this.deleteFiles(params, res, next)
+            case "remove":
+                this.deleteFiles(params, res, next);
                 break;
 
             default:
@@ -115,45 +119,67 @@ class mainController {
         );
     }
 
-    static async moveFiles(params, res, next) {
-        
-    }
+    static async moveFiles(params, res, next) {}
 
-    static async copyFiles(params, res, next) {
+    static async copyFiles(params, res, next) {}
 
-    }
-
-    static async deleteFiles(params, res, next) {
-
+    static async deleteFiles(params, res, next) {  // switches file's isDeleted flag to on
+        try {
+            if (!params.items[0]) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid params",
+                });
+            }
+            
+            let fileIds = JSON.stringify(params.items)
+            let connect = connection.query(
+                "call xxx_cms_remove(?)",
+                [fileIds],
+                function (err, result) {
+                    if (err) {
+                        console.error("Folder/files deletion failed, err:", err);
+                        next(err);
+                    } else {
+                        return res.status(200).json({
+                            success: true,
+                            message: "Folder/files successfully deleted",
+                        });
+                    }
+                }
+            );
+        } catch (error) {
+            if (!error.status) error.status = 500;
+            next(error);
+        }
     }
 
     static async createFolder(params, res, next) {
         try {
-
             // console.log('MAIN CONTROLLER createFolder params: ', params);
 
             /* Helper functions start */
             const prepareEmptyFile = (name) => {
                 const emptyFile = {
                     // wrap the files as an object with short and concise property names
-                    name:  name,
-                    type:  0,
-                    size:  0,
+                    name: name,
+                    type: 0,
+                    size: 0,
                     encoding: 0,
                     data: 0,
                 };
                 return emptyFile;
             };
-    
+
             function finishingUp() {
                 // TODO Create an error handler logic for partial upload fails
                 return res.status(201).json({
                     success: true,
-                    message: 'Folder successfully created'
+                    message: "Folder successfully created",
                 });
             }
             /* Helper functions end */
-    
+
             const {
                 name,
                 siteId,
@@ -162,7 +188,7 @@ class mainController {
                 parentIds,
                 createdBy,
             } = params;
-    
+
             const args = {
                 name: name,
                 siteId: siteId,
@@ -178,12 +204,14 @@ class mainController {
                 isDeleted: 0,
             }; // to be inserted as 'args'
 
-            if(parentId) {args.parentId = parentId}  // avoid parentId null error on DB's SP
-    
+            if (parentId) {
+                args.parentId = parentId;
+            } // avoid parentId null error on DB's SP
+
             let newFolder = prepareEmptyFile(name);
 
             // console.log('createFolder NEWFOLDER: ', newFolder);
-    
+
             let connect = connection.query(
                 "call xxx_cms_create(?, ?, ?, ?)",
                 [JSON.stringify(args), JSON.stringify(newFolder), 1, null],
@@ -201,7 +229,6 @@ class mainController {
             console.error(error);
             next(error);
         }
-        
     }
 
     // static async uploadOld(req, res, next) {  // Depreciated, switched to new SP with multiple files upload capability
@@ -249,13 +276,7 @@ class mainController {
         const files = req.files.files; // I know it's ugly, but it's the most optimal form due to client-side request tampering. But hey, if it works, it works.
         // console.log("HERE is UPLOAD FILES: ", files);
         const body = req.body;
-        const {
-            siteId,
-            parentId,
-            destination,
-            parentIds,
-            createdBy,
-        } = body;
+        const { siteId, parentId, destination, parentIds, createdBy } = body;
 
         // console.log("HERE is UPLOAD BODY: ", body);
 
@@ -305,7 +326,7 @@ class mainController {
             // TODO Create an error handler logic for partial upload fails
             return res.status(201).json({
                 success: true,
-                message: 'File(s) upload successful'
+                message: "File(s) upload successful",
             });
         }
         /* Helper functions end */
@@ -326,7 +347,9 @@ class mainController {
             isDeleted: 0,
         }; // to be inserted as 'args' in addFileToDB function
 
-        if(parentId && parentId !== 'null' && parentId !== 'false') {args.parentId = parentId}  // avoid parentId null error on DB's SP
+        if (parentId && parentId !== "null" && parentId !== "false") {
+            args.parentId = parentId;
+        } // avoid parentId null error on DB's SP
 
         argFiles = prepareFiles(files); // TODO add successful/fail check
 
@@ -339,7 +362,12 @@ class mainController {
 
             let connect = connection.query(
                 "call xxx_cms_create(?, ?, ?, ?)",
-                [JSON.stringify(args), JSON.stringify(argFile), 0, argFile.data],
+                [
+                    JSON.stringify(args),
+                    JSON.stringify(argFile),
+                    0,
+                    argFile.data,
+                ],
                 function (err, result) {
                     const filename = argFile.name;
                     if (err) {
@@ -447,17 +475,18 @@ class mainController {
                         let buffer = dataFile?.data;
                         let filename = dataFile?.name;
 
-                        if(!buffer) {  // Returns error if file's content is NULL
+                        if (!buffer) {
+                            // Returns error if file's content is NULL
                             return res.status(500).json({
                                 success: false,
-                                message: "Invalid file"
-                            })
+                                message: "Invalid file",
+                            });
                         }
 
                         if (isPreview !== "false") {
                             /* Direct from stream, not file! */
                             const myReadableStream = bufferToStream(buffer);
-                            myReadableStream.pipe(res);  // can do this one too, similar to write & end
+                            myReadableStream.pipe(res); // can do this one too, similar to write & end
 
                             /* Alternative to pipe, if wanted to do with a trigger */
                             // myReadableStream.on("data", function (data) {
@@ -467,23 +496,29 @@ class mainController {
                             // myReadableStream.on("end", function () {
                             //     res.end();
                             // });
-
                         } else {
                             let newFile = createTempFile(buffer, filename);
 
                             let currentDir = path.resolve(".");
-                            let pathToFile = currentDir + "/" + newFile.slice(1, newFile.length);
+                            let pathToFile =
+                                currentDir +
+                                "/" +
+                                newFile.slice(1, newFile.length);
 
-                            res.download(pathToFile, (err) => {  // Sends 'physical' copy of the file, and deletes its source file afterwards
-                                if(err) {
+                            res.download(pathToFile, (err) => {
+                                // Sends 'physical' copy of the file, and deletes its source file afterwards
+                                if (err) {
                                     console.error(err);
                                     next(err);
                                 }
-                                fs.unlink(pathToFile, (err) => {  // when file is sent, delete the source
-                                    if(err) {next(err)};
+                                fs.unlink(pathToFile, (err) => {
+                                    // when file is sent, delete the source
+                                    if (err) {
+                                        next(err);
+                                    }
                                     res.end();
                                 });
-                            }); 
+                            });
                         }
                     }
                 }
