@@ -95,10 +95,6 @@ class mainController {
         // console.log('THIS IS MAIN CONTROLLER LIST BY IDS');
         // console.log(params.siteId, params.parentId);
 
-        // /* For testing purpoises */
-        // res.send('success!')
-        // return;
-
         const query = connection.query(
             "call xxx_cms_List(?, ?, @e)",
             [params.siteId, params.parentId],
@@ -113,6 +109,8 @@ class mainController {
                         result: result[0],
                     };
 
+                    console.log(data);
+                    // fs.writeFileSync('./tmp/data3.txt', data)
                     res.send(data);
                 }
             }
@@ -124,6 +122,17 @@ class mainController {
     static async copyFiles(params, res, next) {}
 
     static async deleteFiles(params, res, next) {  // switches file's isDeleted flag to on
+        /* Helper functions start */
+        function finishingUp(success = [], fail = []) {
+            // TODO Create an error handler logic for partial upload fails
+            return res.status(201).json({
+                success: true,
+                message: "Folder/files successfully deleted",
+                data: {success, fail}
+            });
+        }
+        /* Helper functions end */
+
         try {
             if (!params.items[0]) {
                 return res.status(400).json({
@@ -131,23 +140,33 @@ class mainController {
                     message: "Invalid params",
                 });
             }
+
+            const success = []; // storage for successful file prep names
+            const fail = []; // storage for failed file prep names
             
-            let fileIds = JSON.stringify(params.items)
-            let connect = connection.query(
-                "call xxx_cms_remove(?)",
-                [fileIds],
-                function (err, result) {
-                    if (err) {
-                        console.error("Folder/files deletion failed, err:", err);
-                        next(err);
-                    } else {
-                        return res.status(200).json({
-                            success: true,
-                            message: "Folder/files successfully deleted",
-                        });
+            let fileIds = params.items  // file/folder IDs to be deleted
+
+            fileIds.forEach((fileId, index) => {
+                let connect = connection.query(
+                    "call xxx_cms_remove(?)",
+                    [fileId],
+                    function (err, result) {
+                        if (err) {
+                            fail.push(fileId)
+                            console.error("Folder/files deletion failed, err:", err);
+                            next(err);
+                        } else {
+                            success.push(fileId)
+
+                            if(index == fileIds.length - 1) {
+                                return finishingUp(success, fail);
+                            }
+                        }
                     }
-                }
-            );
+                );
+            });
+            return ;
+
         } catch (error) {
             if (!error.status) error.status = 500;
             next(error);
@@ -211,6 +230,9 @@ class mainController {
             let newFolder = prepareEmptyFile(name);
 
             // console.log('createFolder NEWFOLDER: ', newFolder);
+
+            console.log(args);
+            console.log(newFolder);
 
             let connect = connection.query(
                 "call xxx_cms_create(?, ?, ?, ?)",
@@ -277,6 +299,9 @@ class mainController {
         // console.log("HERE is UPLOAD FILES: ", files);
         const body = req.body;
         const { siteId, parentId, destination, parentIds, createdBy } = body;
+
+        fs.writeFileSync('./tmp/data1.txt', JSON.stringify(body))
+        fs.writeFileSync('./tmp/data2.txt', JSON.stringify(req.files))
 
         // console.log("HERE is UPLOAD BODY: ", body);
 
@@ -356,9 +381,21 @@ class mainController {
         // console.log("ARG FILES: ", argFiles);
 
         /* Insert DB Loop here */
+
+        // fs.writeFileSync('./tmp/args.txt', JSON.stringify(args[0]))
+        // fs.writeFileSync('./tmp/argsFile.txt', JSON.stringify(argFiles[0]))
+        // fs.writeFileSync('./tmp/argFileData.txt', JSON.stringify(argFiles[0].data))
+
+        // console.log(JSON.stringify(args[0]))
+        // console.log(JSON.stringify(argFiles[0]))
+        // console.log(JSON.stringify(argFiles[0].data))
+
+
         argFiles.result.forEach((argFile, index) => {
             // console.log("INDEX:", index);
             // console.log("ARGFILE BUFFER: ", argFile.data);
+            // console.log(args);
+            console.log(argFile.data);
 
             let connect = connection.query(
                 "call xxx_cms_create(?, ?, ?, ?)",
